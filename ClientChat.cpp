@@ -7,15 +7,25 @@
 #include <thread>
 #include <functional>
 #include <ncurses.h>
+#include <ctime>
 
-//TODO create message struct with buffer and username and time
+
+//TODO get col value, set max input length to that value - name/date
 
 WINDOW* output_win;
 WINDOW* input_win;
 
+struct Message
+{
+	std::string sender;
+	std::string message;
+	std::string date;
+	
+};
 
 void receive_messages(int client_socket)
 {
+
     char buffer[1024];
 	std::string accumulated_data;
 
@@ -42,8 +52,12 @@ void receive_messages(int client_socket)
             }
 
             wmove(output_win, getcury(output_win), 1);
-            wprintw(output_win, "Buffer: %s\n", message.c_str());
+            wprintw(output_win, "%s\n", message.c_str());
             wrefresh(output_win);
+			
+			wmove(input_win, 1, 1);
+			wclrtoeol(input_win);
+			wrefresh(input_win);
         }				
 
     }
@@ -61,12 +75,35 @@ void end_ncurses() {
     endwin();
 }
 
+Message set_message(Message* message, const std::string& mess, std:: string name) {
+    std::time_t raw_time = std::time(nullptr);
+
+    std::string date = std::ctime(&raw_time);
+
+    if (!date.empty() && date.back() == '\n') {
+        date.pop_back();
+    }
+
+    std::string day_date = date.substr(4, 6);
+    if (day_date[4] == ' ')
+    {
+        day_date[4] = '0';
+    }
+    std::string day_time = "[" + day_date + " " + date.substr(11, 5) + "]";
+
+    message->date = day_time;
+    message->message = mess;
+    message->sender = name;
+
+    return *message;
+}
+
 
 int main(int argc, char *argv[])
 {
     init_ncurses();
 
-	char name[1024];
+	std::string name = argv[1];
 
     //get terminal window size
     int rows, cols;
@@ -77,8 +114,6 @@ int main(int argc, char *argv[])
 
     //grab dimensions of current window, following lines structure window
     scrollok(output_win, TRUE);
-    //wborder(inputWin, '|', '|', '-', '-', '+', '+', '+', '+'); //draws the border
-
 
     box(output_win, 0, 0); //box around input window
     box(input_win, 0,0);
@@ -88,17 +123,9 @@ int main(int argc, char *argv[])
     wmove(output_win, getcury(output_win), 1);
 	wprintw(output_win, "Welcome to the chat!\n");
 	wrefresh(output_win);
-
-    //eventually QString name will = argv[0], pass into an alias instead of declaring username every time
-
-    //output << "\033[1;32m" << "This is a green message" << "\033[0m" << Qt::endl;
-    //output << "\033[1;31m" << "This is a red message" << "\033[0m" << Qt::endl;
-    //output << "\033[1;34m" << "This is a blue message" << "\033[0m" << Qt::endl;
+    box(input_win, 0, 0);
 
 
-
-    //output << "Hello, " << name << "!" << Qt::endl;
-    //std::cout << "Starting the Client ..." << std::endl;
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket == -1)
     {
@@ -109,7 +136,7 @@ int main(int argc, char *argv[])
     clientAddr.sin_port = htons(4000);
     clientAddr.sin_addr.s_addr = inet_addr("192.168.65.134");
 
-    //probably add error handling here, jk prob not :)
+
     if (connect(client_socket, (struct sockaddr*)&clientAddr, sizeof(clientAddr)) == -1)
     {
             std::cerr << "connection failed ruh roh" << std::endl;
@@ -122,43 +149,36 @@ int main(int argc, char *argv[])
     rec_thread.detach();
 
 
-    //output << "\033[1;32m" << "Welcome to the Qt Console App!\n" << "\033[0m" << Qt::endl;
-    //output << "Please enter your name: ";
-    //output.flush();
-
-    //QString name;
-    //input >> name;
-
-
     char mess[1024];
     while (true)
     {
+      
+        Message message;
 
         wmove(input_win, 1, 1);
         wclrtoeol(input_win);
+        box(input_win, 0, 0);
         wrefresh(input_win);
 		
 		echo();
         wgetnstr(input_win, mess, sizeof(mess) - 1);
 		noecho();
 
+        message = set_message(&message, mess, name);
+        std::string complete_message = message.date + " " + message.sender +  ": " + message.message + "\n";
+
 		wmove(output_win, getcury(output_win), 1);
-        wprintw(output_win, "You entered: %s\n", mess); //make this your name input
+        wprintw(output_win, complete_message.c_str()); 
+        box(output_win, 0, 0);
         wrefresh(output_win);
 
-        //fgets(mess, sizeof(mess), stdin); //fix input method
-
-        //waddstr(inputWin, "Enter message: ");
-        //wgetnstr(inputWin, mess, 255);
-
-        send(client_socket, &mess, strlen(mess), 0);
+        send(client_socket, complete_message.c_str(), strlen(complete_message.c_str()), 0);
         if (strcmp(mess, "exit\n") == 0)
             break;
         memset(mess, 0, sizeof(mess));
     }
     close(client_socket);
 
-    // Start the event loop
 	return 0;
 }
 
